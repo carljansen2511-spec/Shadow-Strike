@@ -49,6 +49,7 @@ const ease=v=>{
   return v*v*(3-2*v);
 };
 const cl=(v,a=0,m=1)=>Math.max(a,Math.min(m,v));
+const lerp=(a,b2,k)=>a+(b2-a)*k;
 
 let seed=7;
 const rnd=()=> (seed=seed*16807%2147483647)/2147483647;
@@ -64,6 +65,64 @@ const blood=Array.from({length:60},()=>{
   return{
     vx:Math.cos(a)*s*(rnd()<.5?-1:1)*.8,
     vy:Math.sin(a)*s,r:2+rnd()*4.5
+  };
+});
+
+/* =========================
+   SAKURA TREE DATA (foreground)
+   Branches: x0,y0, ctrlX,ctrlY, x1,y1, width
+========================= */
+const IMPACT_X=480,IMPACT_Y=G-105;
+const TREE_BRANCHES=[
+  [62,150,140,30,330,72,24],
+  [200,62,270,120,400,150,11],
+  [330,72,430,30,570,66,13],
+  [450,50,520,100,610,128,7],
+  [68,270,150,225,225,255,15],
+  [985,15,900,80,770,48,18],
+  [880,52,830,110,740,135,8]
+];
+const qp=(a,b2,c2,s)=>(1-s)*(1-s)*a+2*(1-s)*s*b2+s*s*c2;
+const BLOSSOM_COLS=['#ffb7d0','#ff9fc0','#ffd0e1','#f58bb0','#ffc4d8'];
+const blossoms=[];
+TREE_BRANCHES.forEach(br=>{
+  const n=Math.round(22+br[6]*2.4);
+  for(let i=0;i<n;i++){
+    const s=Math.min(1,.12+rnd()*.95);
+    const ox=(rnd()-.5)*2*(14+br[6]*.9),oy=(rnd()-.5)*2*(12+br[6]*.8);
+    blossoms.push({x:qp(br[0],br[2],br[4],s)+ox,y:qp(br[1],br[3],br[5],s)+oy});
+  }
+});
+for(let i=0;i<26;i++){ // thick crown around where the trunk splits
+  blossoms.push({x:62+(rnd()-.5)*120,y:140+(rnd()-.5)*90});
+}
+blossoms.forEach(p=>{
+  p.r=5+rnd()*5.5;
+  p.col=BLOSSOM_COLS[Math.floor(rnd()*BLOSSOM_COLS.length)];
+  p.ph=rnd()*6.28;p.rot=rnd()*6.28;
+  // blood hits the leaves: closer to the cut = more likely
+  const dist=Math.hypot(p.x-IMPACT_X,p.y-IMPACT_Y);
+  const chance=cl(.8-dist/820,.12,.8);
+  p.st=rnd()<chance;
+  p.stT=4.5+dist/1400+rnd()*.04;
+  p.sx=(rnd()-.5)*p.r*.8;p.sy=(rnd()-.5)*p.r*.8;p.sr=rnd();
+  p.drip=p.st&&rnd()<.35?8+rnd()*26:0;
+  p.jet=p.st&&rnd()<.3;
+});
+
+/* =========================
+   BLOOD SPLATTERED ACROSS THE SCREEN EDGES
+========================= */
+const splats=Array.from({length:52},()=>{
+  const left=rnd()<.5,reach=rnd()*(30+rnd()*95);
+  const dir=left?1:-1,r=5+rnd()*rnd()*32;
+  const sats=Array.from({length:3+Math.floor(rnd()*4)},()=>[
+    dir*rnd()*r*3.2,(rnd()-.5)*r*3.4,1+rnd()*r*.35
+  ]);
+  return{
+    x:left?reach:W-reach,y:40+rnd()*460,dir,r,sats,
+    sl:rnd()<.5?50+rnd()*190:0,sp:(rnd()-.5)*.5,
+    dr:rnd()<.5?25+rnd()*130:0,dl:rnd()*.2
   };
 });
 
@@ -255,6 +314,133 @@ function bg(t){
 }
 
 /* =========================
+   SAKURA TREE (foreground)
+   Blood from the cut reaches the blossoms: spray jets fly from the
+   impact point, then the hit blossoms turn red and some start to drip.
+========================= */
+function flowerPath(px,py,r,rot){
+  x.beginPath();
+  for(let k=0;k<5;k++){
+    const a=rot+k*1.2566,ax=px+Math.cos(a)*r*.58,ay=py+Math.sin(a)*r*.58;
+    x.moveTo(ax+r*.58,ay);x.arc(ax,ay,r*.58,0,7);
+  }
+}
+function sakura(t){
+  x.save();
+  x.lineCap='round';
+  // trunk (thick base, slimmer upper part)
+  const trunk=(a,b2,qx,qy,c2,d,w,col)=>{
+    x.beginPath();x.moveTo(a,b2);x.quadraticCurveTo(qx,qy,c2,d);
+    x.strokeStyle=col;x.lineWidth=w;x.stroke();
+  };
+  trunk(36,H+30,90,400,76,290,98,OL);
+  trunk(76,290,62,210,62,128,64,OL);
+  trunk(36,H+30,90,400,76,290,90,'#3a1b2e');
+  trunk(76,290,62,210,62,128,56,'#3a1b2e');
+  trunk(52,H+20,104,380,86,300,16,'#4d2a40');
+  trunk(86,300,74,220,72,150,10,'#4d2a40');
+  // bark lines
+  x.strokeStyle='rgba(20,8,24,.55)';x.lineWidth=2;
+  for(let i=0;i<7;i++){
+    x.beginPath();x.moveTo(30+i*9,H-i*6);
+    x.quadraticCurveTo(48+i*8,420-i*18,56+i*3,330-i*20);x.stroke();
+  }
+  // branches
+  TREE_BRANCHES.forEach(br=>{
+    x.beginPath();x.moveTo(br[0],br[1]);x.quadraticCurveTo(br[2],br[3],br[4],br[5]);
+    x.strokeStyle=OL;x.lineWidth=br[6]+5;x.stroke();
+  });
+  TREE_BRANCHES.forEach(br=>{
+    x.beginPath();x.moveTo(br[0],br[1]);x.quadraticCurveTo(br[2],br[3],br[4],br[5]);
+    x.strokeStyle='#3a1b2e';x.lineWidth=br[6];x.stroke();
+  });
+
+  // blossoms
+  blossoms.forEach(p=>{
+    const px=p.x+Math.sin(t*1.3+p.ph)*2.2,py=p.y+Math.cos(t*1.1+p.ph)*1.6;
+    flowerPath(px,py,p.r,p.rot);
+    x.fillStyle=p.col;x.fill();
+    x.strokeStyle='rgba(120,30,80,.45)';x.lineWidth=1;x.stroke();
+    x.fillStyle='#d94a82';x.beginPath();x.arc(px,py,p.r*.2,0,7);x.fill();
+    if(p.st&&t>p.stT){
+      const k=ease((t-p.stT)/.1);
+      x.save();x.globalAlpha=k*.88;x.fillStyle='#b5121f';
+      if(p.sr>.6){            // whole blossom soaked
+        flowerPath(px,py,p.r,p.rot);x.fill();
+      }else{                  // splotch of blood on the petals
+        x.beginPath();x.arc(px+p.sx,py+p.sy,p.r*(.5+.5*p.sr),0,7);x.fill();
+        x.beginPath();x.arc(px-p.sx*1.6,py+p.sy*.4,p.r*.22,0,7);x.fill();
+      }
+      x.restore();
+      if(p.drip){
+        const len=p.drip*ease((t-p.stT-.15)/2);
+        if(len>1){
+          x.strokeStyle='#a30f1c';x.fillStyle='#a30f1c';x.lineWidth=2.4;
+          x.beginPath();x.moveTo(px+p.sx,py+p.r*.4);x.lineTo(px+p.sx,py+p.r*.4+len);x.stroke();
+          x.beginPath();x.arc(px+p.sx,py+p.r*.4+len,2.7,0,7);x.fill();
+        }
+      }
+    }
+  });
+
+  // blood spray streaking from the cut up into the tree
+  blossoms.forEach(p=>{
+    if(!p.jet||t<4.5)return;
+    const p0=(t-4.5)/(p.stT-4.5);
+    if(p0<=0||p0>=1.3)return;
+    const head=Math.min(p0,1),tail=Math.max(0,p0-.4);
+    x.save();
+    x.globalAlpha=1-cl((p0-1)/.3);
+    x.strokeStyle='#c1121f';x.lineWidth=3.5;x.lineCap='round';
+    x.beginPath();
+    x.moveTo(lerp(IMPACT_X,p.x,tail),lerp(IMPACT_Y,p.y,tail));
+    x.lineTo(lerp(IMPACT_X,p.x,head),lerp(IMPACT_Y,p.y,head));
+    x.stroke();
+    x.restore();
+  });
+  x.restore();
+}
+
+/* =========================
+   BLOOD ON THE SCREEN SIDES
+   Splashes burst at both edges, then slowly run downward.
+========================= */
+function screenBlood(t){
+  if(t<4.5)return;
+  x.save();
+  splats.forEach(s=>{
+    const q=t-4.5-s.dl;
+    if(q<=0)return;
+    const g=ease(q/.07);
+    x.fillStyle='#b5121f';
+    if(s.sl){ // streak flung toward the middle of the screen
+      const L=s.sl*g,w=s.r*.9;
+      x.beginPath();x.moveTo(s.x,s.y-w);
+      x.lineTo(s.x+s.dir*L,s.y+s.sp*L);
+      x.lineTo(s.x,s.y+w);x.closePath();x.fill();
+    }
+    x.beginPath();x.arc(s.x,s.y,s.r*g,0,7);x.fill();
+    s.sats.forEach(a=>{
+      x.beginPath();x.arc(s.x+a[0]*g,s.y+a[1]*g,a[2]*g,0,7);x.fill();
+    });
+    // wet highlight
+    x.fillStyle='#e0303c';
+    x.beginPath();x.arc(s.x+s.dir*s.r*.25,s.y-s.r*.3,s.r*.28*g,0,7);x.fill();
+    // drip running down
+    if(s.dr){
+      const len=s.dr*ease((q-.25)/2.4);
+      if(len>1){
+        const w=cl(s.r*.3,2.5,7),y0=s.y+s.r*.4;
+        x.strokeStyle='#b5121f';x.fillStyle='#b5121f';x.lineWidth=w;x.lineCap='round';
+        x.beginPath();x.moveTo(s.x,y0);x.lineTo(s.x,y0+len);x.stroke();
+        x.beginPath();x.arc(s.x,y0+len,w*.8,0,7);x.fill();
+      }
+    }
+  });
+  x.restore();
+}
+
+/* =========================
    ORDINARY GUY
 ========================= */
 function guy(t){
@@ -293,42 +479,93 @@ function guy(t){
 
 /* =========================
    NINJA AND KATANA
+
+   Sword geometry (ninja-local coords, +x = facing the target).
+   The scabbard hangs on the hip: mouth + hilt at the front,
+   tip trailing behind. To draw, the hand pulls the hilt
+   forward while the scabbard is pulled back, the tip clears
+   the mouth, then the blade swings round to the front.
+   Sheathing is the same sequence in reverse.
+
+   Posture:
+   o.cp = crouch amount 0..1 (bent knees, front foot planted,
+          back foot pushed far behind, ready to spring)
+   o.tl = forward tilt of the upper body around the hips
+          (head and shoulders lead, the legs stay planted)
 ========================= */
+const BL=100,                    // blade length
+      TH=-.42,                   // scabbard axis, pointing from its end toward the mouth
+      UX=Math.cos(TH),UY=Math.sin(TH),
+      A0=TH+Math.PI,             // blade angle while it sits inside the scabbard
+      RT=112,                    // travel needed for the tip to clear the mouth
+      SLEN=116,                  // scabbard length
+      MX=14,MY=-84,              // scabbard mouth position when worn
+      CR=30,                     // how far the hips drop in the full crouch
+      TL=.38,                    // forward tilt of the upper body in the full crouch
+      HOLD_H=[40,-80],           // hand position while the blade is held out
+      HOLD_A=-.30;               // blade angle (before body tilt) while held out
+
 function ninja(t,px,o,al){
   x.save();x.globalAlpha=al;x.translate(px,G+(o.y||0));x.scale(-1,1);x.rotate(o.lean||0);
-  const cr=o.cr,w=Math.sin(t*7);
+  const cr=o.cr,cp=o.cp||0,tl=o.tl||0,w=Math.sin(t*7);
+  // upper body pivots around the hips
+  const up=()=>{x.save();x.translate(0,-70+cr);x.rotate(tl);x.translate(0,70-cr);};
   const sc=()=>{
     x.beginPath();x.moveTo(-6,-146+cr);
     x.bezierCurveTo(-40,-150+cr+w*10,-70,-132+cr-w*14,-110,-146+cr+w*16);
     x.stroke();
   };
+  up();
   x.lineCap='round';x.strokeStyle=OL;x.lineWidth=14;sc();
   x.strokeStyle='#37d6e6';x.lineWidth=8;sc();
-  limb(-6,-70+cr,-22-cr*.6,0,13,'#1f1a3d');
-  limb(8,-70+cr,24+cr*.8,0,13,'#1f1a3d');
+  x.restore();
+
+  // legs: hip -> knee -> foot. In the crouch the front knee bends over
+  // the planted front foot and the back foot is pushed far behind.
+  const leg=(hx2,hy2,kx,ky,fx,col)=>{
+    x.lineCap='round';x.lineJoin='round';
+    x.beginPath();x.moveTo(hx2,hy2);x.lineTo(kx,ky);x.lineTo(fx,0);
+    x.strokeStyle=OL;x.lineWidth=17;x.stroke();
+    x.strokeStyle=col;x.lineWidth=13;x.stroke();
+  };
+  const lh=-70+cr;
+  const ffx=lerp(24+cr*.8,46,cp),bfx=lerp(-22-cr*.6,-62,cp);
+  const fmx=(8+ffx)/2,bmx=(-6+bfx)/2,mmy=lh/2;
+  leg(-6,lh,bmx+cp*2,mmy+cp*5,bfx,'#1f1a3d');
+  leg(8,lh,fmx+cp*20,mmy-cp*4,ffx,'#1f1a3d');
+
+  up();
   rr(-17,-132+cr,34,64,10,'#2a2250');rr(-17,-90+cr,34,9,3,'#37d6e6');
 
-  // Scabbard
-  x.save();x.lineCap='round';x.lineJoin='round';
-  x.strokeStyle='#090817';x.lineWidth=13;x.beginPath();x.moveTo(-25,-112+cr);x.lineTo(13,-76+cr);x.stroke();
-  x.strokeStyle='#17152d';x.lineWidth=9;x.beginPath();x.moveTo(-25,-112+cr);x.lineTo(13,-76+cr);x.stroke();
-  x.strokeStyle='#5d567e';x.lineWidth=1.5;x.beginPath();x.moveTo(-26,-112+cr);x.lineTo(11,-77+cr);x.stroke();
-  x.strokeStyle='#d4a93a';x.lineWidth=3;x.beginPath();
-  x.moveTo(-16,-103+cr);x.lineTo(-11,-108+cr);x.moveTo(6,-83+cr);x.lineTo(11,-88+cr);x.stroke();
-  x.save();x.translate(-5,-94+cr);x.rotate(Math.PI/4);rr(-7,-3,14,6,2,'#d4a93a');x.restore();x.restore();
+  // Scabbard (gets pulled backwards a little while the blade is drawn)
+  const mx=MX-UX*o.sb,my=MY+cr-UY*o.sb;
+  x.save();x.translate(mx,my);x.rotate(TH);
+  rr(-SLEN,-5.5,SLEN,11,4,'#17152d');
+  x.strokeStyle='#5d567e';x.lineWidth=1.5;x.lineCap='round';
+  x.beginPath();x.moveTo(-SLEN+12,-2.5);x.lineTo(-16,-2.5);x.stroke();
+  rr(-SLEN-1,-6.5,12,13,4,'#d4a93a');   // end cap
+  rr(-36,-6.5,5,13,1,'#37d6e6');        // cord wrap
+  rr(-11,-7,12,14,2,'#d4a93a');         // mouth collar
+  x.restore();
 
   circ(2,-150+cr,16,'#2a2250');rr(-12,-160+cr,28,7,3,'#c9d6e8');
   x.save();x.shadowColor='#7ff';x.shadowBlur=10;x.fillStyle='#aef6ff';
   x.beginPath();x.ellipse(11,-150+cr,4,2.2,0,0,7);x.fill();x.restore();
-  const hx=o.hand[0],hy=o.hand[1]+cr*.4;
-  limb(6,-122+cr,hx,hy,9,'#2a2250');
-  x.save();x.translate(hx,hy);x.rotate(o.a);
-  rr(-14,-4,16,8,2,'#3a2a1a');
-  x.save();x.beginPath();x.roundRect(-13,-3.5,13,7,2);x.clip();x.strokeStyle='#d9d2e8';x.lineWidth=1.5;
-  for(let i=0;i<5;i++){x.beginPath();x.moveTo(-13+i*3,-4);x.lineTo(-9+i*3,4);x.stroke();}
-  x.restore();
-  x.save();x.shadowColor='#ffcf68';x.shadowBlur=5;rr(-2,-8,4,16,1,'#d4a93a');x.restore();
-  const L=Math.max(0,o.L);
+
+  // Arm reaches to the middle of the hilt
+  const hx=o.hand[0],hy=o.hand[1];
+  limb(6,-122+cr,hx-7*Math.cos(o.a),hy-7*Math.sin(o.a),9,'#2a2250');
+
+  // Blade. While it is still in the scabbard only the part
+  // in front of the scabbard mouth is visible.
+  const L=o.L;
+  x.save();
+  if(o.clip){
+    x.translate(mx,my);x.rotate(TH);
+    x.beginPath();x.rect(1,-90,320,180);x.clip();
+    x.rotate(-TH);x.translate(-mx,-my);
+  }
+  x.translate(hx,hy);x.rotate(o.a);
   if(L>.5){
     x.save();x.shadowColor='#7feaff';x.shadowBlur=10;x.beginPath();
     x.moveTo(2,-3.5);x.lineTo(L,-2.5);x.lineTo(L+12,0);x.lineTo(L,3);x.lineTo(2,3.5);
@@ -342,24 +579,110 @@ function ninja(t,px,o,al){
       x.beginPath();x.moveTo(tip-7,0);x.lineTo(tip,-13*g);x.lineTo(tip+7,0);x.lineTo(tip,13*g);x.closePath();x.fill();x.restore();
     }
   }
-  x.restore();x.restore();
+  x.restore();
+
+  // Hilt, guard and gripping fist (never clipped)
+  x.save();x.translate(hx,hy);x.rotate(o.a);
+  rr(-14,-4,16,8,2,'#3a2a1a');
+  x.save();x.beginPath();x.roundRect(-13,-3.5,13,7,2);x.clip();x.strokeStyle='#d9d2e8';x.lineWidth=1.5;
+  for(let i=0;i<5;i++){x.beginPath();x.moveTo(-13+i*3,-4);x.lineTo(-9+i*3,4);x.stroke();}
+  x.restore();
+  x.save();x.shadowColor='#ffcf68';x.shadowBlur=5;rr(-2,-8,4,16,1,'#d4a93a');x.restore();
+  circ(-7,0,5.5,'#2a2250');
+  x.restore();
+
+  x.restore(); // end of upper-body group
+  x.restore();
 }
 
+// Puts the sword r px of travel out of its scabbard (r=0: fully sheathed)
+function stance(o,r,cr){
+  const sh=r*.65,sb=r-sh;      // hand moves forward, scabbard moves back
+  o.cr=cr;o.sb=sb;o.a=A0;o.L=BL;o.clip=r<RT;
+  o.hand=[MX+UX*(3+sh),MY+cr+UY*(3+sh)];
+}
+
+/* ---------------------------------------------------------
+   Ninja timeline (scene time; the impact frame freezes it)
+   2.00-2.45  drops in
+   2.40-3.55  sinks into the crouch (hips low, head forward,
+              back foot pushed behind) while drawing the sword
+   3.80-3.94  blur-dash across the man
+   3.94-6.00  holds the crouched finishing pose
+   6.00-6.50  spins the sword
+   6.50-6.78  brings the blade back round to the scabbard
+   6.78-7.08  slides the sword home (still crouched)
+   7.10-7.70  stands back up
+--------------------------------------------------------- */
 function nState(t){
   if(t<2)return null;
-  const o={cr:0,a:.5,L:0,hand:[14,-70],drawn:false,glint:0,lean:0,y:0};
+  const o={cr:0,a:0,L:BL,hand:[0,0],glint:0,lean:0,y:0,sb:0,clip:false,cp:0,tl:0};
   let px=800;const al=1;const pp=cl((t-2)/.45);
-  o.cr=14*ease((t-2.4)/.3);o.y=-440*(1-pp)*(1-pp);
+  o.y=-440*(1-pp)*(1-pp);
   if(pp<1)o.lean=-.5*(1-pp);
-  if(t>=2.82&&t<3.8){
-    const e=ease((t-2.82)/.72);o.L=115*e;
-    o.hand=[14+16*e,-70-22*e];o.a=.5-.65*e;o.cr=14*(1-e);o.drawn=e>.12;
-    if(t<3){const anticipation=ease((t-2.82)/.18);o.hand[0]-=4*anticipation;o.hand[1]+=3*anticipation;}
+
+  // crouch amount 0..1
+  let pf;
+  if(t<3.2)pf=.5*ease((t-2.4)/.9);
+  else if(t<7.1)pf=.5+.5*ease((t-3.2)/.35);
+  else pf=1-ease((t-7.1)/.6);
+  o.cp=pf;o.tl=TL*pf;
+  const cr=CR*pf;
+
+  if(t<3.05){
+    // sheathed, hand on the hilt; sinking low, thumb pushes the guard just before the draw
+    const k=ease((t-2.82)/.23);
+    stance(o,6*k,cr);
+  }else if(t<3.40){
+    // DRAW: blade slides out of the scabbard
+    const u=cl((t-3.05)/.35),e=u*u*(3-2*u);
+    stance(o,lerp(6,RT,e),cr);
+  }else{
+    // tip clears the mouth, blade swings forward, scabbard snaps back
+    const w=ease((t-3.40)/.2);
+    stance(o,RT,cr);
+    const h1=o.hand,sb1=o.sb;
+    o.a=lerp(A0,HOLD_A,w);
+    o.hand=[lerp(h1[0],HOLD_H[0],w),lerp(h1[1],HOLD_H[1],w)];
+    o.sb=sb1*(1-ease((w-.35)/.65));
+    o.clip=false;
+    if(t>3.48&&t<3.78)o.glint=Math.sin((t-3.48)/.30*Math.PI);
   }
-  if(t>3.35&&t<3.78)o.glint=Math.sin((t-3.35)/.43*Math.PI);
-  if(t>=3.8){const e=ease((t-3.8)/.14);px=800-500*e;o.lean=.28;o.cr=0;}
-  if(t>=3.94){px=300;o.lean=0;o.cr=22;o.hand=[34,-80];o.a=.08;o.L=115;o.glint=0;o.drawn=true;}
-  if(t>=6){const e=ease((t-6)/.6);o.L=115*(1-e);o.a=.08+.4*e;o.hand=[34-20*e,-80+10*e];o.cr=22*(1-e);o.drawn=o.L>.5;}
+
+  // DASH: stays low and leaning into it
+  if(t>=3.8){const e=ease((t-3.8)/.14);px=800-500*e;o.lean=.12;o.cr=cr;o.glint=0;}
+  // LANDED: keeps the crouch, blade held out after the cut
+  if(t>=3.94){
+    px=300;o.lean=0;o.cr=cr;o.hand=HOLD_H.slice();o.a=HOLD_A;
+    o.L=BL;o.glint=0;o.sb=0;o.clip=false;
+  }
+
+  // SHEATHE
+  if(t>=6){
+    if(t<6.5){
+      // spin the sword (one full turn around the wrist, hand lifts a little)
+      const u=ease((t-6)/.5);
+      o.a=HOLD_A+Math.PI*2*u;
+      o.hand=[HOLD_H[0],HOLD_H[1]-14*Math.sin(Math.PI*u)];
+      o.glint=Math.sin(Math.PI*u);
+    }else if(t<6.78){
+      // bring the sword back round and pull the scabbard back to meet it
+      const w=ease((t-6.5)/.28);
+      stance(o,RT,cr);
+      const h1=o.hand,sbT=o.sb;
+      o.a=lerp(HOLD_A,A0,w);
+      o.hand=[lerp(HOLD_H[0],h1[0],w),lerp(HOLD_H[1],h1[1],w)];
+      o.sb=sbT*ease((w-.2)/.8);
+      o.clip=false;
+    }else if(t<7.1){
+      // slide the blade home, still crouched
+      const u=ease((t-6.78)/.3);
+      stance(o,RT*(1-u),cr);
+    }else{
+      // stand back up with the sword sheathed
+      stance(o,0,cr);
+    }
+  }
   return{px,o,al};
 }
 
@@ -380,11 +703,12 @@ function slash(cx,cy,ang,len,bend,u,col,a,w){
   B.reverse().forEach(p=>x.lineTo(p[0],p[1]));x.closePath();x.fill();x.restore();
 }
 
+// Camera punch-in on the ninja's face (head sits ~114px up and ~31px ahead in the crouch)
 const zm = t => {
   const focus=ease((t-3.78)/0.08)*(1-ease((t-4.12)/0.12));
   const maxZoom=3.4,z=1+(maxZoom-1)*focus;
-  const faceX=t<3.94?800-500*ease((t-3.8)/0.14):300;
-  const faceY=t<3.94?260:282;
+  const faceX=(t<3.94?800-500*ease((t-3.8)/0.14):300)-31;
+  const faceY=G-114;
   const offsetX=focus*(W/2-maxZoom*faceX);
   const offsetY=focus*(H/2-maxZoom*faceY);
   x.translate(offsetX,offsetY);x.scale(z,z);
@@ -442,10 +766,98 @@ const SL=[
 ];
 
 /* ==============================================
+   LONG MULTI-SLASH IMPACT (black / white / red manga panels)
+   The scene is frozen at 4.4999 while this plays; everything after
+   the cut (blood, sakura, outro, audio) is pushed back by EXT seconds.
+============================================== */
+const EXT=2.0,IMP_END=4.5+EXT,SN=26;
+const remap=T=>T<4.5?T:T<IMP_END?4.4999:T-EXT;   // real time -> scene time
+const hh=n=>{const s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(s)};
+const slT=k=>4.29+k*.075+hh(k+.5)*.02;           // when slash k lands (shared with audio)
+const PCS=[[0,-82,19,19,1],[0,-56,38,24],[0,-33,38,22],[0,-10,38,22],
+ [-26,-48,10,28],[-30,-20,10,26],[26,-48,10,28],[30,-20,10,26],
+ [-8,24,13,34],[-8,58,13,32],[8,24,13,34],[8,58,13,32]];
+const PCT=PCS.map((p,i)=>slT(2+(i*5)%20));        // each body piece splits on a slash
+const PV=PCS.map((p,i)=>[p[0]*7+(hh(i*3.3)-.5)*420,-90-hh(i*1.9)*330,(hh(i*2.7)-.5)*11]);
+const ORG=(i,T)=>{
+  const bt=4.45+hh(i*1.7)*1.4,s=T-bt;if(s<0)return null;
+  const vx=(hh(i*4)-.5)*900,vy=-200-hh(i*6)*600,y0=270;
+  const th=(-vy+Math.sqrt(vy*vy+1800*(480-y0)))/900,sc=Math.min(s,th);
+  return{x:480+vx*sc*.8,y:Math.min(480,y0+vy*sc+450*sc*sc),r:s<th?s*9*(hh(i)+.5):0,
+         rx:8+hh(i*8)*8,ry:5+hh(i*9)*5};
+};
+function lens(cx,cy,ang,len,u,w,col){
+  x.save();x.translate(cx,cy);x.rotate(ang);x.fillStyle=col;x.beginPath();
+  const A=[],B=[];
+  for(let i=0;i<=20;i++){const s=i/20*u,px=(s-.5)*len,wd=w*Math.sin(Math.PI*s);A.push([px,-wd]);B.push([px,wd*.3]);}
+  A.forEach((p,i)=>i?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1]));B.reverse().forEach(p=>x.lineTo(p[0],p[1]));
+  x.closePath();x.fill();x.restore();
+}
+function impactMulti(T){
+  const q=T-4.24,Q=IMP_END-4.24,k=Math.floor(q*16),r=hh(k*7.7);
+  const mode=r<.45?0:r<.8?1:2;                       // 0 white, 1 black, 2 red panel
+  const pc=mode==1?'#f4f4f4':'#050505',ec=mode==1?'#050505':'#f4f4f4';
+  const bloodC=mode==2?'#050505':'#c1121f',orgC=mode==2?'#3a0008':'#a3101c';
+  const f=Math.floor(T*40),CX=480,CY=300,S=2.1;
+  x.save();x.globalAlpha=1;x.translate((hh(f)-.5)*14,(hh(f+9)-.5)*10);
+  x.fillStyle=['#f4f4f4','#050505','#e3132b'][mode];x.fillRect(-20,-20,W+40,H+40);
+  // speed lines
+  x.lineCap='butt';x.strokeStyle=mode==1?'#f4f4f4':'#050505';
+  for(let i=0;i<48;i++){
+    if(hh(i*9+k)<.4)continue;
+    const a=i/48*6.283+hh(k)*.3,in0=120+hh(i+k)*60;x.lineWidth=1+hh(i*2)*2.5;x.beginPath();
+    x.moveTo(CX+Math.cos(a)*in0,CY+Math.sin(a)*in0);x.lineTo(CX+Math.cos(a)*750,CY+Math.sin(a)*750);x.stroke();
+  }
+  if(hh(k*2.2)<.18){x.font='bold 320px serif';x.textAlign='center';x.lineWidth=8;x.strokeStyle=ec;x.strokeText('斬',200+hh(k)*560,360);}
+  // body pieces
+  PCS.forEach((p,i)=>{
+    const s=Math.max(0,T-PCT[i]),v=PV[i];
+    const dx=v[0]*s/(1+s*1.2)+(s?0:(hh(f+i)-.5)*3),dy=v[1]*s+380*s*s;
+    x.save();x.translate(CX+p[0]*S+dx,CY+p[1]*S+dy);x.rotate(v[2]*s);x.scale(S,S);
+    x.lineWidth=3/S;x.fillStyle=pc;x.strokeStyle=ec;x.beginPath();
+    if(p[4])x.arc(0,0,p[2],0,7);else x.roundRect(-p[2]/2,-p[3]/2,p[2],p[3],4);
+    x.fill();x.stroke();
+    if(!p[4]&&s>0){x.fillStyle='#8d0f1b';x.fillRect(-p[2]/2,-p[3]/2,p[2],3);}
+    if(p[4]){x.strokeStyle=ec;[-6,6].forEach(e=>{x.beginPath();x.moveTo(e-3,-3);x.lineTo(e+3,3);x.moveTo(e+3,-3);x.lineTo(e-3,3);x.stroke();});}
+    x.restore();
+  });
+  // blood streaks
+  x.lineCap='round';x.strokeStyle=bloodC;x.fillStyle=bloodC;
+  for(let i=0;i<80;i++){
+    const s=T-(4.3+hh(i)*1.7);if(s<0||s>.7)continue;
+    const ox=CX+(hh(i*2)-.5)*80,oy=CY-60+hh(i*3)*120,a=hh(i*5)*6.283,sp=300+hh(i*7)*700;
+    const P=u=>[ox+Math.cos(a)*sp*u,oy+Math.sin(a)*sp*u+500*u*u],h=P(s),tl=P(Math.max(0,s-.07));
+    x.lineWidth=3+hh(i*11)*5;x.beginPath();x.moveTo(tl[0],tl[1]);x.lineTo(h[0],h[1]);x.stroke();
+    if(s>.3){x.beginPath();x.arc(h[0],h[1],2+hh(i)*4,0,7);x.fill();}
+  }
+  // trailing intestines + flying organs (stylised blobs)
+  x.lineWidth=6;x.strokeStyle='#8d0f1b';
+  for(let i=0;i<6;i++){const o=ORG(i,T);if(!o)continue;
+    x.beginPath();x.moveTo(CX,CY-20);x.quadraticCurveTo((CX+o.x)/2,Math.max(CY,o.y)+50,o.x,o.y);x.stroke();}
+  for(let i=0;i<16;i++){const o=ORG(i,T);if(!o)continue;
+    x.save();x.translate(o.x,o.y);x.rotate(o.r);
+    x.beginPath();x.ellipse(0,0,o.rx,o.ry,0,0,7);x.fillStyle=orgC;x.fill();
+    x.lineWidth=2.5;x.strokeStyle=mode==1?'#f4f4f4':'#050505';x.stroke();
+    x.fillStyle='rgba(255,210,210,.8)';x.beginPath();x.ellipse(-o.rx*.3,-o.ry*.35,o.rx*.3,o.ry*.2,0,0,7);x.fill();
+    x.restore();}
+  // slashes
+  for(let n=0;n<SN;n++){
+    const s=T-slT(n);if(s<0||s>.24)continue;
+    const u=cl(s/.04),fd=1-cl((s-.08)/.16),w=(14+hh(n)*16)*(.3+.7*fd);
+    const ang=(hh(n*2.7)-.5)*1.9+(n%2?.4:-.4),cx=CX+(hh(n*4.1)-.5)*130,cy=CY+(hh(n*5.9)-.5)*200;
+    lens(cx,cy,ang,1400,u,w+8,'#050505');lens(cx,cy,ang,1400,u,w,mode==0?'#e3132b':'#fff');
+    if(s<.025&&n%3==0){x.fillStyle='rgba(255,255,255,.35)';x.fillRect(-20,-20,W+40,H+40);}
+  }
+  x.restore();
+  if(q>Q-.3){x.fillStyle='rgba(255,255,255,'+ease((q-(Q-.3))/.3)+')';x.fillRect(0,0,W,H);}
+}
+
+/* ==============================================
    MANGA IMPACT ILLUSTRATION
 ============================================== */
 function impactFrame(t) {
-  if(t<3.86||t>=4.5)return;
+  if(t<3.86||t>=IMP_END)return;
+  if(t>=4.24){impactMulti(t);return;}
   const frameImage=x.getImageData(0,0,W,H),pixels=frameImage.data;
   for(let i=0;i<pixels.length;i+=4){
     const lum=.2126*pixels[i]+.7152*pixels[i+1]+.0722*pixels[i+2];
@@ -463,57 +875,50 @@ function impactFrame(t) {
     path(points);x.strokeStyle='#e3132b';x.lineWidth=width;x.shadowColor='#e3132b';x.shadowBlur=5;x.stroke();
     x.restore();
   };
-  if(t<4.24){
-    const p=ease((t-3.86)/0.12),pulse=.75+.25*Math.sin(t*75),shake=Math.sin(t*170)*2;
-    x.save();x.translate(shake,Math.sin(t*137)*1.5);x.fillStyle='#050505';
-    x.beginPath();x.moveTo(0,0);x.lineTo(250,0);x.lineTo(216,30);x.lineTo(290,46);x.lineTo(225,80);x.lineTo(265,104);x.lineTo(177,133);x.lineTo(208,167);x.lineTo(126,188);x.lineTo(163,225);x.lineTo(85,240);x.lineTo(120,275);x.lineTo(48,290);x.lineTo(0,340);x.closePath();x.fill();
-    x.beginPath();x.moveTo(960,0);x.lineTo(780,0);x.lineTo(817,31);x.lineTo(755,50);x.lineTo(824,76);x.lineTo(785,108);x.lineTo(862,119);x.lineTo(832,153);x.lineTo(915,182);x.lineTo(887,212);x.lineTo(960,250);x.closePath();x.fill();
-    x.beginPath();x.moveTo(0,540);x.lineTo(0,437);x.lineTo(46,460);x.lineTo(32,493);x.lineTo(99,481);x.lineTo(80,516);x.lineTo(126,540);x.closePath();x.fill();
-    x.beginPath();x.moveTo(960,540);x.lineTo(805,540);x.lineTo(842,505);x.lineTo(785,489);x.lineTo(848,462);x.lineTo(813,435);x.lineTo(899,411);x.lineTo(871,382);x.lineTo(960,343);x.closePath();x.fill();
-    x.save();x.globalAlpha=.4+.45*p;x.lineCap='butt';
-    for(let i=0;i<46;i++){
-      const a=i/46*Math.PI*2;if(Math.abs(Math.sin(a))<.28)continue;
-      const inner=70+(i%5)*13,outer=(280+(i%7)*58)*(.7+.3*p);
-      x.strokeStyle=i%4===0?'#050505':'#888888';x.lineWidth=i%5===0?3.5:1.3;x.beginPath();
-      x.moveTo(480+Math.cos(a)*inner,270+Math.sin(a)*inner);
-      x.lineTo(480+Math.cos(a)*outer,270+Math.sin(a)*outer);x.stroke();
-    }
-    x.restore();
-    x.save();x.globalAlpha=.24;x.fillStyle='#050505';
-    for(let yy=12;yy<H;yy+=17)for(let xx=12;xx<W;xx+=17){
-      const nearEdge=xx<165||xx>795||yy<45||yy>495;
-      if(nearEdge&&(Math.floor(xx/17)+Math.floor(yy/17))%2===0){x.beginPath();x.arc(xx,yy,1.25,0,Math.PI*2);x.fill();}
-    }
-    x.restore();
-    const slashPath=[[82,475],[243,405],[410,334],[596,251],[864,110]];
-    x.save();x.globalAlpha=.35+.65*p;x.lineCap='butt';x.lineJoin='miter';
-    path(slashPath);x.strokeStyle='#050505';x.lineWidth=48;x.stroke();
-    path(slashPath);x.strokeStyle='#f8f8f8';x.lineWidth=23;x.stroke();
-    path(slashPath);x.strokeStyle='#a0a0a0';x.lineWidth=3;x.stroke();x.restore();
-    bolt([[322,407],[357,366],[339,339],[397,308],[377,282],[425,250],[411,223],[456,190]],2,pulse);
-    bolt([[433,273],[461,290],[484,261],[516,276],[542,242],[573,251],[602,215]],1.5,pulse);
-    bolt([[478,246],[496,222],[487,203],[515,180],[507,155],[535,130]],1.5,pulse);
-    bolt([[393,316],[366,337],[345,326],[318,354],[293,345]],1.2,pulse);
-    bolt([[548,261],[575,286],[562,309],[597,333],[590,356]],1.2,pulse);
-    x.save();x.globalAlpha=pulse;x.shadowColor='#e3132b';x.shadowBlur=17;x.fillStyle='#e3132b';
-    x.beginPath();x.moveTo(428,270);x.lineTo(458,261);x.lineTo(445,275);x.closePath();x.fill();
-    x.shadowBlur=0;x.fillStyle='#ffffff';x.beginPath();x.moveTo(433,269);x.lineTo(450,264);x.lineTo(443,270);x.closePath();x.fill();x.restore();
-    const flash=ease((t-4.19)/0.05);
-    if(flash>0){x.fillStyle=`rgba(255,255,255,${flash*.55})`;x.fillRect(0,0,W,H);}
-    x.restore();
-  }else{
-    const q=t-4.24;let color=null;
-    if(q<.025)color='#ffffff';else if(q<.055)color='#050505';else if(q<.090)color='#e3132b';else if(q<.125)color='#050505';else if(q<.155)color='#ffffff';else if(q<.180)color='#050505';
-    if(color){x.fillStyle=color;x.fillRect(0,0,W,H);}
-    const fade=1-ease(q/.22);
-    bolt([[80,495],[221,420],[198,390],[366,337],[344,304],[493,260],[469,226],[643,171],[619,137],[842,74]],10,fade);
+  const p=ease((t-3.86)/0.12),pulse=.75+.25*Math.sin(t*75),shake=Math.sin(t*170)*2;
+  x.save();x.translate(shake,Math.sin(t*137)*1.5);x.fillStyle='#050505';
+  x.beginPath();x.moveTo(0,0);x.lineTo(250,0);x.lineTo(216,30);x.lineTo(290,46);x.lineTo(225,80);x.lineTo(265,104);x.lineTo(177,133);x.lineTo(208,167);x.lineTo(126,188);x.lineTo(163,225);x.lineTo(85,240);x.lineTo(120,275);x.lineTo(48,290);x.lineTo(0,340);x.closePath();x.fill();
+  x.beginPath();x.moveTo(960,0);x.lineTo(780,0);x.lineTo(817,31);x.lineTo(755,50);x.lineTo(824,76);x.lineTo(785,108);x.lineTo(862,119);x.lineTo(832,153);x.lineTo(915,182);x.lineTo(887,212);x.lineTo(960,250);x.closePath();x.fill();
+  x.beginPath();x.moveTo(0,540);x.lineTo(0,437);x.lineTo(46,460);x.lineTo(32,493);x.lineTo(99,481);x.lineTo(80,516);x.lineTo(126,540);x.closePath();x.fill();
+  x.beginPath();x.moveTo(960,540);x.lineTo(805,540);x.lineTo(842,505);x.lineTo(785,489);x.lineTo(848,462);x.lineTo(813,435);x.lineTo(899,411);x.lineTo(871,382);x.lineTo(960,343);x.closePath();x.fill();
+  x.save();x.globalAlpha=.4+.45*p;x.lineCap='butt';
+  for(let i=0;i<46;i++){
+    const a=i/46*Math.PI*2;if(Math.abs(Math.sin(a))<.28)continue;
+    const inner=70+(i%5)*13,outer=(280+(i%7)*58)*(.7+.3*p);
+    x.strokeStyle=i%4===0?'#050505':'#888888';x.lineWidth=i%5===0?3.5:1.3;x.beginPath();
+    x.moveTo(480+Math.cos(a)*inner,270+Math.sin(a)*inner);
+    x.lineTo(480+Math.cos(a)*outer,270+Math.sin(a)*outer);x.stroke();
   }
+  x.restore();
+  x.save();x.globalAlpha=.24;x.fillStyle='#050505';
+  for(let yy=12;yy<H;yy+=17)for(let xx=12;xx<W;xx+=17){
+    const nearEdge=xx<165||xx>795||yy<45||yy>495;
+    if(nearEdge&&(Math.floor(xx/17)+Math.floor(yy/17))%2===0){x.beginPath();x.arc(xx,yy,1.25,0,Math.PI*2);x.fill();}
+  }
+  x.restore();
+  const slashPath=[[82,475],[243,405],[410,334],[596,251],[864,110]];
+  x.save();x.globalAlpha=.35+.65*p;x.lineCap='butt';x.lineJoin='miter';
+  path(slashPath);x.strokeStyle='#050505';x.lineWidth=48;x.stroke();
+  path(slashPath);x.strokeStyle='#f8f8f8';x.lineWidth=23;x.stroke();
+  path(slashPath);x.strokeStyle='#a0a0a0';x.lineWidth=3;x.stroke();x.restore();
+  bolt([[322,407],[357,366],[339,339],[397,308],[377,282],[425,250],[411,223],[456,190]],2,pulse);
+  bolt([[433,273],[461,290],[484,261],[516,276],[542,242],[573,251],[602,215]],1.5,pulse);
+  bolt([[478,246],[496,222],[487,203],[515,180],[507,155],[535,130]],1.5,pulse);
+  bolt([[393,316],[366,337],[345,326],[318,354],[293,345]],1.2,pulse);
+  bolt([[548,261],[575,286],[562,309],[597,333],[590,356]],1.2,pulse);
+  x.save();x.globalAlpha=pulse;x.shadowColor='#e3132b';x.shadowBlur=17;x.fillStyle='#e3132b';
+  x.beginPath();x.moveTo(428,270);x.lineTo(458,261);x.lineTo(445,275);x.closePath();x.fill();
+  x.shadowBlur=0;x.fillStyle='#ffffff';x.beginPath();x.moveTo(433,269);x.lineTo(450,264);x.lineTo(443,270);x.closePath();x.fill();x.restore();
+  const flash=ease((t-4.19)/0.05);
+  if(flash>0){x.fillStyle=`rgba(255,255,255,${flash*.55})`;x.fillRect(0,0,W,H);}
+  x.restore();
 }
 
 /* =========================
    MAIN ANIMATION
+   t = scene time (frozen during the impact), T = real time
 ========================= */
-function frame(t){
+function frame(t,T=t){
   x.clearRect(0,0,W,H);let sx=0,sy=0;
   if(t>2.45&&t<2.7){const k=1-(t-2.45)/.25;sx=Math.sin(t*140)*7*k;sy=Math.cos(t*120)*9*k;}
   if(t>4.5&&t<4.95){const k=1-(t-4.5)/.45;sx=Math.sin(t*120)*12*k;sy=Math.cos(t*100)*8*k;}
@@ -545,6 +950,8 @@ function frame(t){
       x.fill();
     });
   }
+  // sakura tree in the foreground (in front of the action, blood reaches its blossoms)
+  sakura(t);
   petals.forEach(p=>{
     const px=((p[0]*W-t*(30+p[2]*40))%W+W)%W,py=(p[1]*H+t*(20+p[3]*30))%H;
     x.save();x.globalAlpha=.75;x.fillStyle='#ffc2d8';x.translate(px,py);x.rotate(t+p[2]*6);
@@ -570,6 +977,8 @@ function frame(t){
     }
   }
   x.restore();
+  // blood splashed across the left and right edges of the screen
+  x.save();x.translate(sx,sy);screenBlood(t);x.restore();
   if(t>4.5&&t<5.3){
     x.save();x.globalAlpha=1-(t-4.5)/.8;x.font='bold '+(220+30*(t-4.5))+'px serif';x.textAlign='center';
     x.lineWidth=6;x.strokeStyle='#d4182c';x.fillStyle='#fff';x.strokeText('斬',700,300);x.fillText('斬',700,300);x.restore();
@@ -581,12 +990,12 @@ function frame(t){
   x.fillStyle='#000';x.fillRect(0,0,W,34);x.fillRect(0,H-34,W,34);
   x.textAlign='center';x.fillStyle='#e8f6ff';x.font='italic 22px Georgia,serif';
   if(t<2.4){x.globalAlpha=Math.min(ease(t/.6),1-ease((t-1.8)/.6));x.fillText('Just an ordinary evening...',W/2,H-58);}
-  if(t>6.8){
-    const a=ease((t-6.8)/.9);x.globalAlpha=a*.55;x.fillStyle='#050314';x.fillRect(0,0,W,H);
+  if(t>7.9){
+    const a=ease((t-7.9)/.9);x.globalAlpha=a*.55;x.fillStyle='#050314';x.fillRect(0,0,W,H);
     x.globalAlpha=a;x.save();x.shadowColor='#37d6e6';x.shadowBlur=30;x.fillStyle='#fff';x.font='bold 64px Georgia,serif';x.fillText('SHADOW STRIKE',W/2,H/2-6);x.restore();
     x.font='italic 20px Georgia,serif';x.fillStyle='#9fefff';x.fillText('A new action RPG • Coming soon • Wishlist now',W/2,H/2+34);
   }
-  impactFrame(t);x.globalAlpha=1;
+  impactFrame(T);x.globalAlpha=1;
 }
 
 /* =========================
@@ -645,19 +1054,36 @@ EV.push(
   [0,()=>nz(6,500,300,'lowpass',.07)],
   [2,()=>nz(.45,3000,300,'bandpass',.5)],
   [2.45,()=>{tn(110,35,.5,'sine',.9);nz(.3,800,100,'lowpass',.6);}],
-  [3.05,()=>{nz(.5,4000,9000,'highpass',.35);tn(2500,6000,.45,'sawtooth',.05);}],
+  [2.9,()=>{tn(1500,1900,.05,'square',.08);}],                         // thumb pushes the guard
+  [3.05,()=>{nz(.5,4000,9000,'highpass',.35);tn(2500,6000,.45,'sawtooth',.05);}], // blade sliding out
+  [3.42,()=>{nz(.18,1500,5000,'bandpass',.45);}],                      // blade swings forward
   [3.45,()=>tn(2600,2600,.6,'sine',.25)],
   [3.55,()=>tn(70,45,.2,'sine',.8)],
   [3.68,()=>tn(70,45,.2,'sine',.9)],
   [3.78,()=>nz(.25,500,6000,'bandpass',.9)],
   [3.86,()=>{nz(.10,6500,1200,'highpass',.8);tn(120,42,.22,'sine',.85);tn(1800,240,.12,'square',.12);}],
   [3.98,sw],
-  [4.11,sw],
-  [4.24,sw],
   [4.5,()=>{nz(.5,6000,800,'highpass',.9);tn(80,30,.9,'sine',1);nz(.5,900,150,'lowpass',.9);tn(300,100,.3,'square',.2);}],
-  [6.55,()=>{tn(1800,1200,.08,'square',.2);nz(.1,5000,3000,'highpass',.3);}],
-  [6.9,()=>{[146.8,220,293.7,370].forEach(f=>tn(f,f,2.5,'sawtooth',.06));}]
+  [4.62,()=>nz(.35,1800,500,'bandpass',.35)],                          // blood spraying onto the tree and screen
+  [6.02,()=>{nz(.45,1800,7000,'bandpass',.32);tn(1400,2600,.4,'sine',.05);}], // sword spin
+  [6.52,()=>nz(.22,6000,3000,'highpass',.2)],                          // blade swings back round
+  [6.82,()=>nz(.3,6000,3000,'highpass',.22)],                          // blade sliding home
+  [7.08,()=>{tn(1800,1200,.08,'square',.2);nz(.1,5000,3000,'highpass',.3);}], // click of the guard
+  [7.15,()=>nz(.45,900,300,'lowpass',.14)],                            // cloth rustle as he stands
+  [7.9,()=>{[146.8,220,293.7,370].forEach(f=>tn(f,f,2.5,'sawtooth',.06));}]
 );
+// everything from the blood hit onward is delayed by EXT (the long impact frame)
+EV.forEach(e=>{if(e[0]>=4.5)e[0]+=EXT;});
+// long impact: riser, rapid slashes, wet hits, organ splats
+EV.push([4.24,()=>{nz(2.2,300,7000,'bandpass',.18);tn(90,400,2.2,'sawtooth',.05);}]);
+for(let n=0;n<SN;n++){
+  const Tn=slT(n);
+  EV.push([Tn,sw]);
+  EV.push([Tn,()=>nz(.07,7000,1500,'highpass',.35)]);
+  EV.push([Tn+.02,()=>{nz(.12,1000,200,'lowpass',.45);if(n%3==0)tn(110,40,.15,'sine',.5);}]);
+}
+for(let i=0;i<16;i++)EV.push([4.45+hh(i*1.7)*1.4+.45,()=>nz(.12,700,150,'lowpass',.3)]);
+EV.push([IMP_END-.35,()=>{tn(60,30,.5,'sine',.9);}]);
 EV.sort((a,b)=>a[0]-b[0]);
 
 /* =========================
@@ -675,13 +1101,13 @@ function loop(n){
   let t=0;
   if(playing){
     t=(n-t0)/1000;
-    if(t>13){t0=n;t=0;fi=0;}
+    if(t>13+EXT){t0=n;t=0;fi=0;}
     while(fi<EV.length&&EV[fi][0]<=t){
       if(t-EV[fi][0]<.4)EV[fi][1]();
       fi++;
     }
   }
-  frame(t);
+  frame(remap(t),t);
   if(!playing){
     x.fillStyle='rgba(0,0,0,.45)';x.fillRect(0,0,W,H);
     x.fillStyle='#fff';x.font='bold 28px Georgia,serif';x.textAlign='center';
