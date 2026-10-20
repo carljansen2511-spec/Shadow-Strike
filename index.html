@@ -597,18 +597,17 @@ let AC=null,mg=null,NB=null;
 // Your real sword sound. Put slash-sword.mp3 beside this HTML file.
 const slashAudio=new Audio('./slash-sword.mp3');
 slashAudio.preload='auto';
+slashAudio.load()
 slashAudio.volume=0.9;
 
-function playSlashAudio(){
-  // Clone so the three fast slashes can overlap without cutting each other off.
-  const sound=slashAudio.cloneNode();
-  sound.volume=0.9;
-  sound.currentTime=0;
-  const result=sound.play();
-  if(result&&typeof result.catch==='function'){
-    result.catch(err=>console.warn('Slash sound could not play:',err));
-  }
-  sound.addEventListener('ended',()=>sound.remove(),{once:true});
+function playSlashAudio() {
+  const sound = slashAudio.cloneNode();
+  sound.volume = 0.9;
+  sound.currentTime = 0;
+
+  sound.play().catch(err =>
+    console.warn('Slash sound could not play:', err)
+  );
 }
 
 function initAudio(){
@@ -652,9 +651,9 @@ EV.push(
   [3.68,()=>tn(70,45,.2,'sine',.9)],
   [3.78,()=>nz(.25,500,6000,'bandpass',.9)],
   [3.86,()=>{nz(.10,6500,1200,'highpass',.8);tn(120,42,.22,'sine',.85);tn(1800,240,.12,'square',.12);}],
-  [4.00,sw],
-  [4.13,sw],
-  [4.26,sw],
+  [3.98,sw],
+  [4.11,sw],
+  [4.24,sw],
   [4.5,()=>{nz(.5,6000,800,'highpass',.9);tn(80,30,.9,'sine',1);nz(.5,900,150,'lowpass',.9);tn(300,100,.3,'square',.2);}],
   [6.55,()=>{tn(1800,1200,.08,'square',.2);nz(.1,5000,3000,'highpass',.3);}],
   [6.9,()=>{[146.8,220,293.7,370].forEach(f=>tn(f,f,2.5,'sawtooth',.06));}]
